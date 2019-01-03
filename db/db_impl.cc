@@ -40,43 +40,44 @@ namespace leveldb {
 const int kNumNonTableCacheFiles = 10;
 
 // Information kept for every waiting writer
-struct DBImpl::Writer {
-  Status status;
-  WriteBatch* batch;
-  bool sync;
+struct DBImpl::Writer { //写结构
+  Status status;//状态
+  WriteBatch* batch;//用于批量写入
+  bool sync;//bool标志，同步
   bool done;
   port::CondVar cv;
 
-  explicit Writer(port::Mutex* mu) : cv(mu) { }
+  explicit Writer(port::Mutex* mu) : cv(mu) { }//显示构造函数
 };
 
-struct DBImpl::CompactionState {
+struct DBImpl::CompactionState {//压缩状态结构体
   Compaction* const compaction;
 
   // Sequence numbers < smallest_snapshot are not significant since we
   // will never have to service a snapshot below smallest_snapshot.
   // Therefore if we have seen a sequence number S <= smallest_snapshot,
   // we can drop all entries for the same key with sequence numbers < S.
-  SequenceNumber smallest_snapshot;
+  SequenceNumber smallest_snapshot; //存储最小快照序列号
 
   // Files produced by compaction
   struct Output {
     uint64_t number;
-    uint64_t file_size;
-    InternalKey smallest, largest;
+    uint64_t file_size;//文件大小
+    InternalKey smallest, largest;//文件的最小Key，最大key
   };
-  std::vector<Output> outputs;
+  std::vector<Output> outputs;//结构体数组
 
   // State kept for output being generated
   WritableFile* outfile;
   TableBuilder* builder;
 
-  uint64_t total_bytes;
-
+  uint64_t total_bytes;//总字节数
+  
+  //返回指向最近输出文件结构体的指针，即数组最后一个元素
   Output* current_output() { return &outputs[outputs.size()-1]; }
 
-  explicit CompactionState(Compaction* c)
-      : compaction(c),
+  explicit CompactionState(Compaction* c)//构造函数
+      : compaction(c),//赋值，指针指向
         outfile(nullptr),
         builder(nullptr),
         total_bytes(0) {
@@ -121,10 +122,11 @@ static int TableCacheSize(const Options& sanitized_options) {
   return sanitized_options.max_open_files - kNumNonTableCacheFiles;
 }
 
+//构造函数，第二个参数是数据库实例的名称
 DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
     : env_(raw_options.env),
-      internal_comparator_(raw_options.comparator),
-      internal_filter_policy_(raw_options.filter_policy),
+      internal_comparator_(raw_options.comparator),//比较器
+      internal_filter_policy_(raw_options.filter_policy),//过滤器策略
       options_(SanitizeOptions(dbname, &internal_comparator_,
                                &internal_filter_policy_, raw_options)),
       owns_info_log_(options_.info_log != raw_options.info_log),
@@ -178,48 +180,49 @@ DBImpl::~DBImpl() {
 }
 
 Status DBImpl::NewDB() {
-  VersionEdit new_db;
-  new_db.SetComparatorName(user_comparator()->Name());
-  new_db.SetLogNumber(0);
-  new_db.SetNextFile(2);
+  VersionEdit new_db;//版本信息
+  new_db.SetComparatorName(user_comparator()->Name());//设置比较器名称
+  new_db.SetLogNumber(0);//
+  new_db.SetNextFile(2);//设置下标
   new_db.SetLastSequence(0);
 
-  const std::string manifest = DescriptorFileName(dbname_, 1);
+  const std::string manifest = DescriptorFileName(dbname_, 1);//通过数据库实例名称
   WritableFile* file;
   Status s = env_->NewWritableFile(manifest, &file);
-  if (!s.ok()) {
-    return s;
+  if (!s.ok()) {//如果创建失败
+    return s;//直接返回
   }
   {
-    log::Writer log(file);
+    log::Writer log(file);//形成日志写
     std::string record;
     new_db.EncodeTo(&record);
-    s = log.AddRecord(record);
-    if (s.ok()) {
+    s = log.AddRecord(record);//将记录添加到日志中
+    if (s.ok()) {//判断是否写成功
       s = file->Close();
     }
   }
-  delete file;
+  delete file;//析构文件对象
   if (s.ok()) {
     // Make "CURRENT" file that points to the new manifest file.
     s = SetCurrentFile(env_, dbname_, 1);
   } else {
-    env_->DeleteFile(manifest);
+    env_->DeleteFile(manifest);//删除mainfest文件
   }
-  return s;
+  return s;//返回设置文件的状态
 }
 
 void DBImpl::MaybeIgnoreError(Status* s) const {
   if (s->ok() || options_.paranoid_checks) {
     // No change needed
   } else {
+	//将错误对象以字符串形式写入日志，然后忽略该错误
     Log(options_.info_log, "Ignoring error %s", s->ToString().c_str());
-    *s = Status::OK();
+    *s = Status::OK();//修改为正常状态
   }
 }
 
 void DBImpl::DeleteObsoleteFiles() {
-  mutex_.AssertHeld();
+  mutex_.AssertHeld();//校验当前线程是否拥有互斥锁
 
   if (!bg_error_.ok()) {
     // After a background error, we don't know whether a new version may
@@ -228,13 +231,13 @@ void DBImpl::DeleteObsoleteFiles() {
   }
 
   // Make a set of all of the live files
-  std::set<uint64_t> live = pending_outputs_;
+  std::set<uint64_t> live = pending_outputs_; //构建一个集合，包含所有处于激活状态的文件
   versions_->AddLiveFiles(&live);
 
-  std::vector<std::string> filenames;
+  std::vector<std::string> filenames;//vector
   env_->GetChildren(dbname_, &filenames);  // Ignoring errors on purpose
   uint64_t number;
-  FileType type;
+  FileType type;//文件类型
   for (size_t i = 0; i < filenames.size(); i++) {
     if (ParseFileName(filenames[i], &number, &type)) {
       bool keep = true;
