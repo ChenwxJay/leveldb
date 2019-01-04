@@ -238,41 +238,44 @@ void DBImpl::DeleteObsoleteFiles() {
   env_->GetChildren(dbname_, &filenames);  // Ignoring errors on purpose
   uint64_t number;
   FileType type;//文件类型
-  for (size_t i = 0; i < filenames.size(); i++) {
-    if (ParseFileName(filenames[i], &number, &type)) {
-      bool keep = true;
+  for (size_t i = 0; i < filenames.size(); i++) {//遍历数组
+    if (ParseFileName(filenames[i], &number, &type)) {//解析文件名
+      bool keep = true;//标志位
       switch (type) {
         case kLogFile:
+		  //根据日志版本号设置标志位
           keep = ((number >= versions_->LogNumber()) ||
                   (number == versions_->PrevLogNumber()));
           break;
-        case kDescriptorFile:
+        case kDescriptorFile://描述符文件
           // Keep my manifest file, and any newer incarnations'
           // (in case there is a race that allows other incarnations)
           keep = (number >= versions_->ManifestFileNumber());
           break;
-        case kTableFile:
-          keep = (live.find(number) != live.end());
+        case kTableFile://表文件
+          keep = (live.find(number) != live.end());//根据number在文件集合中查找文件对象，如果查到就置位
           break;
-        case kTempFile:
+        case kTempFile://临时文件
           // Any temp files that are currently being written to must
           // be recorded in pending_outputs_, which is inserted into "live"
+		  //正在写的临时文件将会被插入文件集合，因此需要查找
           keep = (live.find(number) != live.end());
           break;
         case kCurrentFile:
         case kDBLockFile:
-        case kInfoLogFile:
-          keep = true;
+        case kInfoLogFile://日志文件
+          keep = true;//默认为true
           break;
       }
 
-      if (!keep) {
+      if (!keep) {//如果为false
         if (type == kTableFile) {
-          table_cache_->Evict(number);
+          table_cache_->Evict(number);//函数参数为序号
         }
         Log(options_.info_log, "Delete type=%d #%lld\n",
-            static_cast<int>(type),
-            static_cast<unsigned long long>(number));
+            static_cast<int>(type),//强制类型转换，打印类型
+            static_cast<unsigned long long>(number)); //序号
+		//删除数据库下的文件
         env_->DeleteFile(dbname_ + "/" + filenames[i]);
       }
     }
@@ -280,40 +283,40 @@ void DBImpl::DeleteObsoleteFiles() {
 }
 
 Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
-  mutex_.AssertHeld();
+  mutex_.AssertHeld();//恢复，需要加互斥锁
 
   // Ignore error from CreateDir since the creation of the DB is
   // committed only when the descriptor is created, and this directory
   // may already exist from a previous failed creation attempt.
   env_->CreateDir(dbname_);
-  assert(db_lock_ == nullptr);
-  Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);
-  if (!s.ok()) {
+  assert(db_lock_ == nullptr); //判断db锁是否为空
+  Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);//初始化Lock
+  if (!s.ok()) {//如果失败则返回
     return s;
   }
 
-  if (!env_->FileExists(CurrentFileName(dbname_))) {
-    if (options_.create_if_missing) {
-      s = NewDB();
+  if (!env_->FileExists(CurrentFileName(dbname_))){//根据数据库名称查询是否存在
+    if (options_.create_if_missing) {//判断是否有创建的参数
+      s = NewDB();//创建数据库实例
       if (!s.ok()) {
         return s;
       }
     } else {
-      return Status::InvalidArgument(
+      return Status::InvalidArgument(//添加参数到返回状态，返回一个Status实例
           dbname_, "does not exist (create_if_missing is false)");
     }
-  } else {
-    if (options_.error_if_exists) {
+  } else {//数据库实例存在
+    if (options_.error_if_exists) {//判断是否设置了eexist选项
       return Status::InvalidArgument(
           dbname_, "exists (error_if_exists is true)");
-    }
+    }//返回已经存在的错误
   }
-
-  s = versions_->Recover(save_manifest);
+  
+  s = versions_->Recover(save_manifest);//恢复已经保存的版本
   if (!s.ok()) {
     return s;
   }
-  SequenceNumber max_sequence(0);
+  SequenceNumber max_sequence(0);//序列号
 
   // Recover from all newer log files than the ones named in the
   // descriptor (new log files may have been added by the previous
@@ -322,11 +325,12 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
   // Note that PrevLogNumber() is no longer used, but we pay
   // attention to it in case we are recovering a database
   // produced by an older version of leveldb.
-  const uint64_t min_log = versions_->LogNumber();
+  const uint64_t min_log = versions_->LogNumber();//日志编号，最小编号
   const uint64_t prev_log = versions_->PrevLogNumber();
-  std::vector<std::string> filenames;
+  std::vector<std::string> filenames;//文件名数组
+  //获取数据库下面文件
   s = env_->GetChildren(dbname_, &filenames);
-  if (!s.ok()) {
+  if (!s.ok()) {//如果失败
     return s;
   }
   std::set<uint64_t> expected;
@@ -495,18 +499,19 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
 
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
-  mutex_.AssertHeld();
-  const uint64_t start_micros = env_->NowMicros();
+  mutex_.AssertHeld();//判断是否持有互斥锁
+  const uint64_t start_micros = env_->NowMicros();//通过全局env变量获取参数
   FileMetaData meta;
-  meta.number = versions_->NewFileNumber();
+  meta.number = versions_->NewFileNumber();//获取文件序号
   pending_outputs_.insert(meta.number);
-  Iterator* iter = mem->NewIterator();
+  Iterator* iter = mem->NewIterator();//获取内存表对象的迭代器
   Log(options_.info_log, "Level-0 table #%llu: started",
       (unsigned long long) meta.number);
 
-  Status s;
+  Status s;//状态变量
   {
-    mutex_.Unlock();
+    mutex_.Unlock();//解锁
+	//创建内存表，不用加锁
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
   }
