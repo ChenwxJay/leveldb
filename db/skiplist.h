@@ -40,8 +40,7 @@ class Arena;
 template<typename Key, class Comparator>
 class SkipList {
  private:
-  struct Node;
-
+  struct Node;//结构体声明，前向声明
  public:
   // Create a new SkipList object that will use "cmp" for comparing keys,
   // and will allocate memory using "*arena".  Objects allocated in the arena
@@ -75,51 +74,56 @@ class SkipList {
 
     // Advances to the previous position.
     // REQUIRES: Valid()
-    void Prev();
+    void Prev();//回到上一个位置
 
     // Advance to the first entry with a key >= target
-    void Seek(const Key& target);
+    void Seek(const Key& target);//定位函数
 
     // Position at the first entry in list.
     // Final state of iterator is Valid() iff list is not empty.
-    void SeekToFirst();
+    void SeekToFirst();//定位第一个元素
 
     // Position at the last entry in list.
     // Final state of iterator is Valid() iff list is not empty.
-    void SeekToLast();
+    void SeekToLast();//定位最后一个元素
 
    private:
-    const SkipList* list_;
+    const SkipList* list_;//指向跳表结构的指针
     Node* node_;
     // Intentionally copyable
   };
 
  private:
-  enum { kMaxHeight = 12 };
+  enum { kMaxHeight = 12 };//定义枚举变量，最大高度
 
   // Immutable after construction
-  Comparator const compare_;
+  Comparator const compare_;//比较器，底层const
   Arena* const arena_;    // Arena used for allocations of nodes
 
-  Node* const head_;
+  Node* const head_;//节点指针定义，头节点
 
   // Modified only by Insert().  Read racily by readers, but stale
   // values are ok.
+  //整个跳表的最大高度，使用原子类型来保存
   port::AtomicPointer max_height_;   // Height of the entire list
 
-  inline int GetMaxHeight() const {
+  inline int GetMaxHeight() const {//获取最大高度
     return static_cast<int>(
+	    //使用原子类型的加载函数来获取，再转换类型
         reinterpret_cast<intptr_t>(max_height_.NoBarrier_Load()));
   }
 
   // Read/written only by Insert().
   Random rnd_;
 
-  Node* NewNode(const Key& key, int height);
-  int RandomHeight();
+  Node* NewNode(const Key& key, int height);//创建节点，参数是一个Key和所在层的高度
+  int RandomHeight();//随机高度
+  
+  //判断两个键是否相等，调用底层的compare方法
   bool Equal(const Key& a, const Key& b) const { return (compare_(a, b) == 0); }
 
   // Return true if key is greater than the data stored in "n"
+  //将Key与节点n里面的数据进行比较
   bool KeyIsAfterNode(const Key& key, Node* n) const;
 
   // Return the earliest node that comes at or after key.
@@ -144,9 +148,10 @@ class SkipList {
 
 // Implementation details follow
 template<typename Key, class Comparator>
-struct SkipList<Key,Comparator>::Node {
+struct SkipList<Key,Comparator>::Node { //内部结构体定义
+  //显示构造函数声明
   explicit Node(const Key& k) : key(k) { }
-
+  //公有Key
   Key const key;
 
   // Accessors/mutators for links.  Wrapped in methods so we can
@@ -155,6 +160,7 @@ struct SkipList<Key,Comparator>::Node {
     assert(n >= 0);
     // Use an 'acquire load' so that we observe a fully initialized
     // version of the returned Node.
+	//需要使用原子类型的加载方法， 再做类型强转
     return reinterpret_cast<Node*>(next_[n].Acquire_Load());
   }
   void SetNext(int n, Node* x) {

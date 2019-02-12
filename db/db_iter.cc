@@ -50,29 +50,30 @@ class DBIter: public Iterator {
 
   DBIter(DBImpl* db, const Comparator* cmp, Iterator* iter, SequenceNumber s,
          uint32_t seed)
-      : db_(db),
-        user_comparator_(cmp),
+      : db_(db), //db具体实现类对象
+        user_comparator_(cmp),//用户设置的比较器
         iter_(iter),
         sequence_(s),
-        direction_(kForward),
+        direction_(kForward),//默认是前进
         valid_(false),
-        rnd_(seed),
+        rnd_(seed), //随机数
         bytes_until_read_sampling_(RandomCompactionPeriod()) {
   }
-  virtual ~DBIter() {
+  virtual ~DBIter() {//析构函数，只需析构迭代器对象
     delete iter_;
   }
-  virtual bool Valid() const { return valid_; }
-  virtual Slice key() const {
+  virtual bool Valid() const { return valid_; }//返回是否有效
+  virtual Slice key() const {//获取Key，返回对应的Slice
     assert(valid_);
+	//根据方向提取Key，如果是kForward，则直接返回iter指向的键值对的key
     return (direction_ == kForward) ? ExtractUserKey(iter_->key()) : saved_key_;
   }
   virtual Slice value() const {
-    assert(valid_);
+    assert(valid_);//校验是否有效
     return (direction_ == kForward) ? iter_->value() : saved_value_;
   }
-  virtual Status status() const {
-    if (status_.ok()) {
+  virtual Status status() const {//返回当前状态
+    if (status_.ok()) {//内部状态ok
       return iter_->status();
     } else {
       return status_;
@@ -81,54 +82,56 @@ class DBIter: public Iterator {
 
   virtual void Next();
   virtual void Prev();
-  virtual void Seek(const Slice& target);
-  virtual void SeekToFirst();
-  virtual void SeekToLast();
+  virtual void Seek(const Slice& target);//虚函数，定位，参数是Slice对象
+  virtual void SeekToFirst();//定位到头部
+  virtual void SeekToLast();//定位到尾部
 
  private:
   void FindNextUserEntry(bool skipping, std::string* skip);
-  void FindPrevUserEntry();
-  bool ParseKey(ParsedInternalKey* key);
+  void FindPrevUserEntry();//查找上一个user_key
+  bool ParseKey(ParsedInternalKey* key);//解析key
 
   inline void SaveKey(const Slice& k, std::string* dst) {
-    dst->assign(k.data(), k.size());
+    dst->assign(k.data(), k.size());//将Slice对象的内容赋值给string指针
   }
 
-  inline void ClearSavedValue() {
+  inline void ClearSavedValue() {//清除保存的Key
     if (saved_value_.capacity() > 1048576) {
-      std::string empty;
-      swap(empty, saved_value_);
+      std::string empty;//临时对象
+	  //大内存利用swap交换清除
+      swap(empty, saved_value_);//交换
     } else {
-      saved_value_.clear();
+      saved_value_.clear();//清除整个字符串
     }
   }
 
   // Picks the number of bytes that can be read until a compaction is scheduled.
   size_t RandomCompactionPeriod() {
+	//返回可以被读到的字节数，当压缩被调度的时候
     return rnd_.Uniform(2*config::kReadBytesPeriod);
   }
 
-  DBImpl* db_;
-  const Comparator* const user_comparator_;
-  Iterator* const iter_;
-  SequenceNumber const sequence_;
+  DBImpl* db_;//指针，指向df插入器的对象
+  const Comparator* const user_comparator_;//用户键比较器对象，两层const
+  Iterator* const iter_;//迭代器
+  SequenceNumber const sequence_;//序列号
 
-  Status status_;
+  Status status_;//状态
   std::string saved_key_;     // == current key when direction_==kReverse
   std::string saved_value_;   // == current raw value when direction_==kReverse
-  Direction direction_;
+  Direction direction_;//方向
   bool valid_;
 
-  Random rnd_;
+  Random rnd_;//随机数对象
   size_t bytes_until_read_sampling_;
 
   // No copying allowed
-  DBIter(const DBIter&);
-  void operator=(const DBIter&);
+  DBIter(const DBIter&);//拷贝构造函数，禁止外部拷贝构造
+  void operator=(const DBIter&);//赋值运算符，重载，被禁止
 };
 
 inline bool DBIter::ParseKey(ParsedInternalKey* ikey) {
-  Slice k = iter_->key();
+  Slice k = iter_->key();//通过内部迭代器获取键对象
 
   size_t bytes_read = k.size() + iter_->value().size();
   while (bytes_until_read_sampling_ < bytes_read) {
@@ -274,14 +277,15 @@ void DBIter::FindPrevUserEntry() {
   }
 }
 
-void DBIter::Seek(const Slice& target) {
-  direction_ = kForward;
-  ClearSavedValue();
+void DBIter::Seek(const Slice& target) {//定位
+  direction_ = kForward;//方向，标记为前进
+  ClearSavedValue();//清除保存值
+  //调用对象的clear方法
   saved_key_.clear();
   AppendInternalKey(
       &saved_key_, ParsedInternalKey(target, sequence_, kValueTypeForSeek));
-  iter_->Seek(saved_key_);
-  if (iter_->Valid()) {
+  iter_->Seek(saved_key_);//通过迭代器定位需要查找的Key
+  if (iter_->Valid()) {//迭代器有效
     FindNextUserEntry(false, &saved_key_ /* temporary storage */);
   } else {
     valid_ = false;
@@ -309,11 +313,12 @@ void DBIter::SeekToLast() {
 }  // anonymous namespace
 
 Iterator* NewDBIterator(
-    DBImpl* db,
-    const Comparator* user_key_comparator,
+    DBImpl* db,//指向具体的db实现类对象
+    const Comparator* user_key_comparator,//比较器对象，用于键比较
     Iterator* internal_iter,
     SequenceNumber sequence,
     uint32_t seed) {
+  //内部使用new创建数据库迭代器，返回指针
   return new DBIter(db, user_key_comparator, internal_iter, sequence, seed);
 }
 

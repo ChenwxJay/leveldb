@@ -14,21 +14,21 @@
 
 namespace leveldb {
 
-typedef uint64_t Key;
+typedef uint64_t Key;//自定义类型，本质上是无符号64位整数
 
-struct Comparator {
+struct Comparator {//自定义比较器，结构体
   int operator()(const Key& a, const Key& b) const {
     if (a < b) {
       return -1;
     } else if (a > b) {
-      return +1;
+      return +1;//返回正数
     } else {
       return 0;
     }
   }
 };
 
-class SkipTest { };
+class SkipTest { };//空类定义
 
 TEST(SkipTest, Empty) {
   Arena arena;
